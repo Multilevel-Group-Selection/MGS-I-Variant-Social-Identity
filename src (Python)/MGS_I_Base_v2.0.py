@@ -1,4 +1,6 @@
 import random
+import math
+import numpy as np
 import matplotlib.pyplot as plt
 
 # -----------
@@ -7,7 +9,7 @@ import matplotlib.pyplot as plt
 
 # Set size of social space.
 rows, cols = 21, 21
-
+ROWS, COLS = 22, 22
 # Set initial conditions.
 initial_percent = 30
 density = 0.3
