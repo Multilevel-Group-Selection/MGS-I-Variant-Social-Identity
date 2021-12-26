@@ -3,175 +3,231 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 # -----------
 # PARAMETERS
 # -----------
 
 # Set size of social space.
-rows, cols = 21, 21
 ROWS, COLS = 22, 22
+
 # Set initial conditions.
-initial_percent = 30
-density = 0.3
-pressure = 7
-synergy = 8
-effort = 1
+INITIAL_PROSOCIAL_FRACTION = .1
+DENSITY = 0.7
+PRESSURE = 1.06
+SYNERGY = 2.4
 
 # Set simulation length.
-tick_max = 100
-tick = 0
+TICK_MAX = 200
 
-# Population size is calculated from the size of
-# the social space and density.
-population = int(density * (cols - 1) * (rows - 1))
 
-# Prepare empty lists.
-x, y = [], []
-field = []
+# --------------------
+# CLASSES & FUNCTIONS
+# --------------------
 
-# -------
-# METHODS
-# -------
+class Agent():
+    """Represents an agent in the simulation.
+    
+       agent ids start at 1
+       agent locs are world coordinates
+       agent policy is binary
+       agent group_patience is real in [0, 1)
+       agent policy_patience is real in [0, 1)
+       agent group is a list of agents in agent's group
+       agent score is the payoff from the agent's policy and group"""
+    
+    def __init__(self, agent_id, spot_loc, agent_policy, *,
+                group_patience=0.5,
+                policy_patience=0.5):
+        self.id = agent_id
+        self.loc = spot_loc 
+        self.policy = agent_policy
+        self.group_patience = group_patience
+        self.policy_patience = policy_patience
+        self.group = []
+        self.score = 0.
+        
+    def __str__(self):
+        return (f'{self.__class__.__name__}: '
+                f'{self.id} is at '
+                f'{self.loc} with policy value '
+                f'{self.policy}, group patience '
+                f'{self.group_patience}, policy patience '
+                f'{self.policy_patience}, and current score '
+                f'{self.score})')
+    
+    def __repr__(self):
+        return (f'{self.__class__.__name__}('
+                f'{self.id}, '
+                f'{self.loc}, '
+                f'{self.policy}, '
+                f'{self.group_patience}, '
+                f'{self.policy_patience}, '
+                f'{self.score})')
 
-# 
-def setup():
-    for row in range(rows):
-        field.append([-1] * cols)
+    def update_score(self):
+        """Updates agent's score based on its current group."""
+        contribution = 0
+        group_size = len(self.group)
+        if group_size > 1:
+            for groupmember in self.group:
+                contribution += groupmember.policy
+            self.score = (1 - self.policy) + SYNERGY * contribution / group_size
+        else:
+            self.score = 1
+        
+    def wants_to_change_group(self):
+        """Returns True if agent decides to change groups."""
+        if random.random() >= self.group_patience:
+            return True
+        else:
+            return False
+    
+    def wants_to_change_policy(self):
+        """Returns True if agent decides to change its policy."""
+        if random.random() >= self.policy_patience:
+            return True
+        else:
+            return False
+    
+    def change_policy(self):
+        """Changes an agent's policy"""
+        self.policy = (self.policy + 1) % 2
+    
+
+def setup(agents, world, population):
+    """Creates agent population according to simulation parameters."""
+    for agent_id in range(1, population + 1):
+        spot = (random.randrange(ROWS - 1), random.randrange(COLS - 1))
+        while world[spot]:
+            spot = (random.randrange(ROWS - 1), random.randrange(COLS - 1))
+        world[spot] = agent_id
+        agents.append(Agent(agent_id, spot, 0))
+    
+    initialprosocial = int(population * INITIAL_PROSOCIAL_FRACTION)
+    for agent in agents[:initialprosocial]:
+        agent.policy = 1
+
+
+def update_groups(agents, field):
+    """Updates each agent's group list."""
+    population = len(agents)
+    for agent in agents:
+        agent.group = [agent]
+    for pagent in agents:
+        for nagent in agents[pagent.id:population]:
+            if math.dist(pagent.loc, nagent.loc) < 1.5:
+                pagent.group.append(nagent)
+                nagent.group.append(pagent)
+    
+
+def count_agents(value, agentset):
+    """Counts agents in agentset with with value as their policy."""
     count = 0
-    while count != population:
-        px = random.randint(0, cols - 1)
-        py = random.randint(0, rows - 1)
-        if field[py][px] == -1:
-            field[py][px] = 0
+    for agent in agentset:
+        if value == agent.policy:
             count += 1
-    agents = ask_agents()
-    contrib_initial = int(initial_percent / 100.0 * population)
-    for agent in agents[:contrib_initial]:
-        field[agent[1]][agent[0]] = 1
-
-# 
-def ask_agents():
-    agents = []
-    for row in range(rows):
-        for col in range(cols):
-            if field[row][col] != -1:
-                agents.append((col, row))
-    random.shuffle(agents)
-    return agents
-
-# 
-def count_agents(effort):
-    count = 0
-    for row in range(rows):
-        for col in range(cols):
-            if effort == field[row][col]:
-                count += 1
     return count
 
-# 
-def count_agents_in_Moore(px, py, contribution):
-    dirs = [(1, 0), (-1, 0), (0, 1), (0, -1),
-            (1, 1), (1, -1), (-1, 1), (-1, -1)]
 
-    count = 1 if field[py][px] == contribution else 0
-    for d in dirs:
-        mx = (px + d[0]) % cols
-        my = (py + d[1]) % rows
-        if field[my][mx] == contribution: count += 1
-    return count
-
-# 
-def count_agents_in_Moore_any(px, py):
-    dirs = [(1, 0), (-1, 0), (0, 1), (0, -1),
-            (1, 1), (1, -1), (-1, 1), (-1, -1)]
-
-    count = 1
-    for d in dirs:
-        mx = (px + d[0]) % cols
-        my = (py + d[1]) % rows
-        if field[my][mx] != -1: count += 1
-    return count
-
-# 
-def move_to(px, py):
-    can_move = []
-    dirs = [(1, 0), (-1, 0), (0, 1), (0, -1),
-            (1, 1), (1, -1), (-1, 1), (-1, -1)]
-
-    for d in dirs:
-        mx = (px + d[0]) % cols
-        my = (py + d[1]) % rows
-        if field[my][mx] == -1: can_move.append((mx, my))
-
-    if len(can_move) > 0:
-        move = random.choice(can_move)
-        field[move[1]][move[0]] = field[py][px]
-        field[py][px] = -1
-
-# 
-def potentially_moving():
-    for col, row in ask_agents():
-        if effort == field[row][col]:
-            if synergy * effort * count_agents_in_Moore(col, row, effort) /\
-            count_agents_in_Moore_any(col, row) <= pressure:
-                move_to(col, row)
-        elif 0 == field[row][col]:
-            if effort + synergy * effort * count_agents_in_Moore(col, row, effort) /\
-            count_agents_in_Moore_any(col, row) <= pressure:
-                move_to(col, row)
-
-# 
-def potentially_changing_behavior():
-    for col, row in ask_agents():
-        if field[row][col] != -1:
-            if count_agents_in_Moore_any(col, row) == 1:
-                if effort <= pressure:
-                    if field[row][col] == 1:
-                        field[row][col] = 0
-                    else:
-                        field[row][col] = 1
-            else:
-                if field[row][col] == effort:
-                    if synergy * effort * count_agents_in_Moore(col, row, effort) /\
-            count_agents_in_Moore_any(col, row) <= pressure:
-                        field[row][col] = 0
-                else:
-                    if effort + synergy * effort * count_agents_in_Moore(col, row, effort) /\
-            count_agents_in_Moore_any(col, row) <= pressure:
-                        field[row][col] = 1
-
+def empty_spots(world):
+    """Generator of empty spots in world."""
+    for x in range(ROWS):
+        for y in range (COLS):
+            if world[x][y] == 0:
+                yield((x, y))
+                
 
 # ----------
 # SIMULATION
 # ----------                        
 
-# 
-setup()
-x.append(tick)
-y.append((count_agents(1) * 1.0 / (count_agents(1) + count_agents(0)) * 100))
-#print ("tick: %d  %f%% contrib: %d non-contrib: %d population: %d" %\
-#    (tick, (count_agents(1) * 1.0 / (count_agents(1) + count_agents(0)) * 100), count_agents(1), count_agents(0), count_agents(1) + count_agents(0)))
-while True:
-    tick += 1
-    potentially_moving()
-    potentially_changing_behavior()
-    percent = (count_agents(1) * 1.0 / (count_agents(1) + count_agents(0)) * 100)
-#    print ("tick: %d  %f%% contrib: %d non-contrib: %d population: %d" %\
-#    (tick, percent, count_agents(1), count_agents(0), count_agents(1) + count_agents(0)))
-    x.append(tick)
-    y.append(percent)
-    if count_agents(1) == population or count_agents(1) == 0 or tick > tick_max:
-        break;
+def simulate():
+    random.seed()
 
+    # Prepare empty lists.
+    time, prosocial_fraction = [], []
+    world = np.zeros((ROWS, COLS)) 
+    agents = []
 
-# --------
-# PLOTTING
-# --------
+    # Calculate population size is the product of size of the social space and density.
+    population = int(DENSITY * COLS * ROWS)
 
-# 
-plt.plot(x, y)
-plt.ylim(ymin=0)
-plt.title('Contributors')
-plt.xlabel('ticks')
-plt.ylabel('% of population')
-plt.show()
+    # Setup the world.
+    setup(agents, world, population)
+
+    # Set up time and book keeping
+    tick = 0
+    time.append(tick)
+    prosocial_fraction.append(count_agents(1, agents) / population)
+
+    while True:
+        tick += 1
+        
+        # Update group membership for all agents.
+        update_groups(agents, world)
+        
+        # Calculate agent satisfaction for all agents.
+        for agent in agents:
+            agent.update_score()
+    
+        # Check agent satisfaction and allow all unsatisfied agents to choose actions.
+        agents_moving = []
+        agents_switching = []
+        unsatisfied = 0
+        for agent in agents:
+            if agent.score < PRESSURE:
+                unsatisfied += 1
+                if agent.wants_to_change_group():
+                    agents_moving.append(agent)
+                if agent.wants_to_change_policy():
+                    agents_switching.append(agent)
+    
+        # End the simulation if all agents are satisfied.               
+        if unsatisfied == 0:
+            break
+            
+        # Relocate all agents that are moving.
+    
+        # Start by creating a list of open spots, then append spots of all agents who will move.
+        available_spots = list(empty_spots(world))
+        for agent in agents_moving:
+            available_spots.append(agent.loc)
+            
+        # Find each agent a new spot then move the agent    
+        for agent in agents_moving:
+            old_spot = agent.loc
+            new_spot = random.choice(available_spots)
+            while old_spot == new_spot:
+                new_spot = random.choice(available_spots)
+                
+            # Move the agent and reduce the set of available spots           
+            world[old_spot] = 0
+            world[new_spot] = agent.id
+            agent.loc = new_spot     
+            available_spots.remove(new_spot)
+    
+        # Update policies for all agents that are changing.
+        for agent in agents_switching:
+            agent.change_policy()
+    
+            
+        # Perform end of tick book keeping.
+        time.append(tick)
+        prosocial_fraction.append(count_agents(1, agents) / population)
+    
+        # End the simulation if out of time. 
+        if tick > TICK_MAX:
+            break
+    return (time, prosocial_fraction)
+
+if __name__ == "__main__":
+    (time, prosocial_fraction) = simulate()
+    
+    # PLOTTING
+    plt.plot(time, prosocial_fraction)
+    plt.ylim(ymin=0., ymax=1.)
+    plt.title('Contributors')
+    plt.xlabel('ticks')
+    plt.ylabel('% of population')
+    plt.show()
