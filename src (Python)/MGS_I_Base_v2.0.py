@@ -14,6 +14,8 @@ ROWS, COLS = 22, 22
 # Set initial conditions.
 INITIAL_PROSOCIAL_FRACTION = .1
 DENSITY = 0.7
+
+# Set game parameters
 PRESSURE = 1.06
 SYNERGY = 2.4
 
@@ -37,8 +39,8 @@ class Agent():
        agent score is the payoff from the agent's policy and group"""
     
     def __init__(self, agent_id, spot_loc, agent_policy, *,
-                group_patience=0.5,
-                policy_patience=0.5):
+                group_patience=0.0,
+                policy_patience=0.0):
         self.id = agent_id
         self.loc = spot_loc 
         self.policy = agent_policy
@@ -98,9 +100,9 @@ class Agent():
 def setup(agents, world, population):
     """Creates agent population according to simulation parameters."""
     for agent_id in range(1, population + 1):
-        spot = (random.randrange(ROWS - 1), random.randrange(COLS - 1))
+        spot = (random.randrange(ROWS), random.randrange(COLS))
         while world[spot]:
-            spot = (random.randrange(ROWS - 1), random.randrange(COLS - 1))
+            spot = (random.randrange(ROWS), random.randrange(COLS))
         world[spot] = agent_id
         agents.append(Agent(agent_id, spot, 0))
     
